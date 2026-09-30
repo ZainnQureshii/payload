@@ -12,13 +12,16 @@ import {
 import { fileURLToPath } from 'url'
 import { expect, vi } from 'vitest'
 
-// eslint-disable-next-line payload/no-relative-monorepo-imports -- Exercises this internal boundary directly.
-import { readLocalizedBranchWrite } from '../../packages/payload/src/branching/readLocalizedBranchWrite.js'
-// eslint-disable-next-line payload/no-relative-monorepo-imports -- Exercises this internal boundary directly.
-import { readCollectionMergeSnapshot } from '../../packages/payload/src/branching/readMergeSnapshot.js'
-import { scheduleMergeHandler } from '../../packages/ui/src/utilities/scheduleMergeHandler.js'
 import type { NextRESTClient } from '../__helpers/shared/NextRESTClient.js'
 
+// eslint-disable-next-line payload/no-relative-monorepo-imports -- Exercises this internal boundary directly.
+import { readLocalizedBranchWrite } from '../../packages/payload/src/branching/readLocalizedBranchWrite.js'
+
+// eslint-disable-next-line payload/no-relative-monorepo-imports -- Exercises this internal boundary directly.
+import { readCollectionMergeSnapshot } from '../../packages/payload/src/branching/readMergeSnapshot.js'
+
+// eslint-disable-next-line payload/no-relative-monorepo-imports -- Exercises this internal boundary directly.
+import { scheduleMergeHandler } from '../../packages/ui/src/utilities/scheduleMergeHandler.js'
 import { test } from '../__helpers/int/vitest.js'
 import { devUser } from '../credentials.js'
 import { hookSpy } from './hookSpy.js'
@@ -7047,6 +7050,8 @@ test.suite('Branching', { config: './config.ts', resetBetweenTests: false }, () 
     })
 
     test('should create exactly one shadow row when two edits race to fork the same document', async () => {
+      const loggerError = vi.spyOn(payload.logger, 'error')
+
       await payload.create({
         collection: branchesSlug,
         data: { name: 'Race', slug: 'racebranch' },
@@ -7088,6 +7093,11 @@ test.suite('Branching', { config: './config.ts', resetBetweenTests: false }, () 
       })
 
       expect(changes.docs).toHaveLength(1)
+      expect(loggerError).not.toHaveBeenCalledWith(
+        expect.objectContaining({ msg: 'A post-commit cleanup task failed.' }),
+      )
+
+      loggerError.mockRestore()
     })
 
     test('should create exactly one global row when first writes race', async () => {

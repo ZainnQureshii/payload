@@ -272,6 +272,12 @@ const updateByIDOperationWithLifecycle = async <
       })
       didResolveBranchFork = true
 
+      if (cleanupScope && cleanupScope.transactionID !== (await req.transactionID)) {
+        // Concurrent fork recovery replaces the operation-owned transaction. Its rollback closes
+        // the old cleanup scope, so the remaining update needs a scope for the new transaction.
+        cleanupScope = await beginDeferredCleanupScope({ req })
+      }
+
       if (!isExistingBranchDocument) {
         docWithLocales = await readUpdateDocument<TSlug>({
           id,

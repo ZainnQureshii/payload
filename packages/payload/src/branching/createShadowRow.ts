@@ -30,9 +30,73 @@ type Args = {
 
 const isShadowUniquenessError = (error: unknown): error is ValidationError =>
   error instanceof ValidationError &&
-  error.data.errors.some(
-    ({ path }) => path === branchDocIDField || path === '_branch_doc_id' || path === branchField,
+  error.data.errors.some(({ path }) =>
+    path
+      .split(',')
+      .map((fieldPath) => fieldPath.trim())
+      .some(
+        (fieldPath) =>
+          fieldPath === branchDocIDField ||
+          fieldPath === '_branch_doc_id' ||
+          fieldPath === '_branchdocid_id' ||
+          fieldPath === branchField,
+      ),
   )
+
+const isTransientTransactionError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+
+  const labeledError = error as {
+    errorLabels?: string[]
+    hasErrorLabel?: (label: string) => boolean
+  }
+
+  return (
+    labeledError.hasErrorLabel?.('TransientTransactionError') === true ||
+    labeledError.errorLabels?.includes('TransientTransactionError') === true
+  )
+}
+
+const isRecoverableConcurrentShadowError = (error: unknown): boolean =>
+  isShadowUniquenessError(error) || isTransientTransactionError(error)
+
+const findCompetingShadow = async ({
+  branch,
+  collectionSlug,
+  docID,
+  req,
+}: {
+  branch: string
+  collectionSlug: string
+  docID: number | string
+  req: PayloadRequest
+}): Promise<null | Record<string, unknown>> => {
+  // MongoDB does not expose an in-progress transaction's write until it commits.
+  // The losing conflict can surface first, so allow the winning transaction a
+  // short, bounded period to become visible.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+
+    const winner = (await req.payload.db.findOne({
+      branch: false,
+      collection: collectionSlug,
+      req,
+      where: {
+        and: [{ [branchField]: { equals: branch } }, { [branchDocIDField]: { equals: docID } }],
+      },
+    })) as null | Record<string, unknown>
+
+    if (winner) {
+      return winner
+    }
+  }
+
+  return null
+}
 
 /**
  * Creates a branch's shadow row for a document, safe against two concurrent
@@ -48,8 +112,9 @@ const isShadowUniquenessError = (error: unknown): error is ValidationError =>
  * disturbing the write the caller is in the middle of.
  *
  * An operation that owns the request's existing transaction can opt into
- * creating the shadow and registry there instead. That path leaves all error
- * handling to the transaction owner and does not attempt race recovery.
+ * creating the shadow and registry there instead. If that transaction loses
+ * a concurrent first-edit race, this helper rolls it back, reads the winning
+ * shadow, and starts a replacement transaction for the remaining operation.
  */
 export const createShadowRow = async ({
   branch,
@@ -69,17 +134,33 @@ export const createShadowRow = async ({
       throw new Error('Ambient shadow creation requires an active transaction.')
     }
 
-    const shadow = await createShadowContent({
-      branch,
-      collectionSlug,
-      data,
-      req: ambient,
-      source,
-    })
+    try {
+      const shadow = await createShadowContent({
+        branch,
+        collectionSlug,
+        data,
+        req: ambient,
+        source,
+      })
 
-    await onCreated(ambient, shadow)
+      await onCreated(ambient, shadow)
 
-    return shadow
+      return shadow
+    } catch (error) {
+      if (!isRecoverableConcurrentShadowError(error)) {
+        throw error
+      }
+
+      await killTransaction(req)
+
+      const winner = await findCompetingShadow({ branch, collectionSlug, docID, req })
+
+      if (!winner || !(await initTransaction(req))) {
+        throw error
+      }
+
+      return winner
+    }
   }
 
   // Registry writes use the same request so that they share the branch fork's transaction.
@@ -103,31 +184,11 @@ export const createShadowRow = async ({
   } catch (error) {
     await killTransaction(isolated)
 
-    if (!isShadowUniquenessError(error)) {
+    if (!isRecoverableConcurrentShadowError(error)) {
       throw error
     }
 
-    // On MongoDB, an in-progress transaction's write is invisible to a plain read
-    // until it commits, and the loser's own conflict can surface before that commit
-    // lands — unlike Postgres, which blocks the losing insert until the winner's
-    // transaction resolves. A few short retries cover that gap without turning a
-    // genuine failure into an indefinite wait.
-    let winner: null | Record<string, unknown> = null
-
-    for (let attempt = 0; !winner && attempt < 5; attempt++) {
-      if (attempt > 0) {
-        await new Promise((resolve) => setTimeout(resolve, 20))
-      }
-
-      winner = (await req.payload.db.findOne({
-        branch: false,
-        collection: collectionSlug,
-        req,
-        where: {
-          and: [{ [branchField]: { equals: branch } }, { [branchDocIDField]: { equals: docID } }],
-        },
-      })) as null | Record<string, unknown>
-    }
+    const winner = await findCompetingShadow({ branch, collectionSlug, docID, req })
 
     if (!winner) {
       throw error
@@ -146,6 +207,14 @@ export const createShadowRow = async ({
     return shadow
   } catch (error) {
     await killTransaction(isolated)
+
+    if (shouldCommit && isRecoverableConcurrentShadowError(error)) {
+      const winner = await findCompetingShadow({ branch, collectionSlug, docID, req })
+
+      if (winner) {
+        return winner
+      }
+    }
 
     const shadowID = shadow.id
 
