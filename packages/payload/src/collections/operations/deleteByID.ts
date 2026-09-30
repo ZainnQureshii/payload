@@ -10,10 +10,12 @@ import type { Collection, DataFromCollectionSlug } from '../config/types.js'
 
 import { executeAccess } from '../../auth/executeAccess.js'
 import { hasWhereAccessResult } from '../../auth/types.js'
+import { refreshBranchState, resolveBranch } from '../../branching/resolveBranch.js'
 import {
   assertBranchCreatedDeleteUnreferenced,
   willBranchAbsorbDelete,
 } from '../../branching/tombstone.js'
+import { MAIN_BRANCH } from '../../branching/types.js'
 import { combineQueries } from '../../database/combineQueries.js'
 import { Forbidden, NotFound } from '../../errors/index.js'
 import { afterRead } from '../../fields/hooks/afterRead/index.js'
@@ -90,6 +92,11 @@ export const deleteByIDOperation = async <TSlug extends CollectionSlug, TSelect 
       showHiddenFields,
       trash = false,
     } = args
+    const isDeletingFromBranch =
+      Boolean(
+        config.branching?.enabled &&
+          config.branching.branchableCollections.has(collectionConfig.slug),
+      ) && resolveBranch(req) !== MAIN_BRANCH
 
     // /////////////////////////////////////
     // Access
@@ -329,6 +336,10 @@ export const deleteByIDOperation = async <TSlug extends CollectionSlug, TSelect 
     }
     if (shouldCommit) {
       await commitTransaction(req)
+    }
+
+    if (isDeletingFromBranch) {
+      refreshBranchState(req)
     }
 
     return result as TransformCollectionWithSelect<TSlug, TSelect>

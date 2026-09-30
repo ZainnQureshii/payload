@@ -21,7 +21,11 @@ import type {
 import { executeAccess } from '../../auth/executeAccess.js'
 import { hasWhereAccessResult } from '../../auth/types.js'
 import { forkDocument } from '../../branching/forkDocument.js'
-import { resetBranchState, resolveBranch } from '../../branching/resolveBranch.js'
+import {
+  refreshRequestDataLoader,
+  resetBranchState,
+  resolveBranch,
+} from '../../branching/resolveBranch.js'
 import { branchField, MAIN_BRANCH } from '../../branching/types.js'
 import { combineQueries } from '../../database/combineQueries.js'
 import { APIError, Forbidden, NotFound } from '../../errors/index.js'
@@ -387,6 +391,10 @@ const updateByIDOperationWithLifecycle = async <
     }
     if (shouldCommit) {
       await commitTransaction(req)
+    }
+
+    if (isBranchingDocument) {
+      refreshRequestDataLoader(req)
     }
 
     return result

@@ -18,7 +18,11 @@ import type {
 
 import { executeAccess } from '../../auth/executeAccess.js'
 import { forkDocument } from '../../branching/forkDocument.js'
-import { resetBranchState, resolveBranch } from '../../branching/resolveBranch.js'
+import {
+  refreshRequestDataLoader,
+  resetBranchState,
+  resolveBranch,
+} from '../../branching/resolveBranch.js'
 import { MAIN_BRANCH } from '../../branching/types.js'
 import { combineQueries } from '../../database/combineQueries.js'
 import { validateQueryPaths } from '../../database/queryValidation/validateQueryPaths.js'
@@ -587,6 +591,10 @@ export const updateOperation = async <
     }
     if (shouldCommit) {
       await commitTransaction(req)
+    }
+
+    if (isBranchUpdate) {
+      refreshRequestDataLoader(req)
     }
 
     // @ts-expect-error - vestiges of when tsconfig was not strict. Feel free to improve
