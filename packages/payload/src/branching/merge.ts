@@ -1060,7 +1060,8 @@ const applyChange = async ({
   }
 
   if (change.operation === 'create') {
-    const [rowWrite, ...laterWrites] = writes
+    const actionableWrites = writes.filter((write) => write.trashState !== 'access')
+    const [rowWrite, ...laterWrites] = actionableWrites
     const createReq = withoutBranch(req)
     const localization = payload.config.localization
     const hasLocalizedFields = traverseForLocalizedFields(
@@ -1072,7 +1073,7 @@ const applyChange = async ({
     if (localeCodes?.length) {
       localizedWrites = []
 
-      for (const write of writes) {
+      for (const write of actionableWrites) {
         const documentsByLocale = new Map<string, Record<string, unknown>>()
 
         for (const locale of localeCodes) {
@@ -1108,22 +1109,28 @@ const applyChange = async ({
         const branchDoc = localizedWrites?.[0]?.get(createLocale)
 
         if (branchDoc) {
+          const data = stripInternal(branchDoc)
+
           await updateByIDOperationForBranchMerge({
             id: shadowID,
             collection: payload.collections[collectionSlug]!,
-            data: stripInternal(branchDoc) as never,
+            data: data as never,
             draft: rowWrite!.draft,
             overrideAccess,
             req: withLocale({ locale: createLocale, req: createReq }),
+            trash: includesTrashState(data),
           })
         }
       } else {
+        const data = stripInternal(rowWrite!.data)
+
         await updateByIDOperationForBranchMerge({
           id: shadowID,
           collection: payload.collections[collectionSlug]!,
-          data: stripInternal(rowWrite!.data) as never,
+          data: data as never,
           overrideAccess,
           req: createReq,
+          trash: includesTrashState(data),
         })
       }
 
@@ -1138,26 +1145,32 @@ const applyChange = async ({
               continue
             }
 
+            const data = stripInternal(branchDoc)
+
             await payload.update({
               id: shadowID,
               branch: false,
               collection: collectionSlug,
-              data: stripInternal(branchDoc) as never,
+              data: data as never,
               draft: true,
               locale,
               overrideAccess,
               req: createReq,
+              trash: includesTrashState(data),
             })
           }
         } else {
+          const data = stripInternal(write.data)
+
           await payload.update({
             id: shadowID,
             branch: false,
             collection: collectionSlug,
-            data: stripInternal(write.data) as never,
+            data: data as never,
             draft: true,
             overrideAccess,
             req: createReq,
+            trash: includesTrashState(data),
           })
         }
       }
@@ -1201,6 +1214,25 @@ const applyChange = async ({
   const mainRowIDsBySource: NestedRowIDMap = new Map()
 
   for (const write of writes) {
+    if (write.trashState === 'access') {
+      continue
+    }
+
+    if (write.trashState === 'apply') {
+      await payload.update({
+        id: docID,
+        branch: false,
+        collection: collectionSlug,
+        data: { deletedAt: write.data.deletedAt ?? null } as never,
+        draft: false,
+        overrideAccess,
+        req,
+        trash: true,
+      })
+
+      continue
+    }
+
     // With localization off there is one value per field, so the shadow row is the write.
     if (!localeCodes?.length) {
       const data = applyMappedNestedRowIDs({
@@ -1222,6 +1254,7 @@ const applyChange = async ({
         draft: write.draft,
         overrideAccess,
         req,
+        trash: includesTrashState(data),
       })) as Record<string, unknown>
 
       recordNestedRowIDs({
@@ -1278,6 +1311,7 @@ const applyChange = async ({
         locale,
         overrideAccess,
         req,
+        trash: includesTrashState(data),
       })) as Record<string, unknown>
 
       recordNestedRowIDs({
@@ -1292,6 +1326,9 @@ const applyChange = async ({
 
   await dropShadowRow()
 }
+
+const includesTrashState = (data: Record<string, unknown>): boolean =>
+  Object.prototype.hasOwnProperty.call(data, 'deletedAt')
 
 const withLocale = ({ locale, req }: { locale: string; req: PayloadRequest }): PayloadRequest => {
   const isolated = isolateBranchState(req)
