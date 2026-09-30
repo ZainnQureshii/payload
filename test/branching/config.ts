@@ -37,8 +37,8 @@ const localizedCategoryBlock: Block = {
   fields: [
     {
       name: 'category',
-      localized: true,
       type: 'relationship',
+      localized: true,
       relationTo: categoriesSlug,
     },
   ],
@@ -235,12 +235,31 @@ export default buildConfigWithDefaults({
       {
         slug: mediaSlug,
         fields: [{ name: 'alt', type: 'text' }],
-        upload: { staticDir: path.resolve(dirname, 'media') },
+        upload: {
+          filenameCompoundIndex: ['filename', 'alt'],
+          staticDir: path.resolve(dirname, 'media'),
+        },
         versions: false,
       },
       {
         slug: uniqueSlug,
-        fields: [{ name: 'slug', type: 'text', unique: true }],
+        fields: [
+          { name: 'slug', type: 'text', unique: true },
+          {
+            name: 'metadata',
+            type: 'group',
+            fields: [{ name: 'code', type: 'text', unique: true }],
+          },
+          { name: 'site', type: 'text' },
+          { name: 'customSlug', type: 'text' },
+        ],
+        indexes: [
+          {
+            fields: ['site', 'customSlug'],
+            requireExists: ['site', 'customSlug'],
+            unique: true,
+          },
+        ],
         versions: false,
       },
       {
