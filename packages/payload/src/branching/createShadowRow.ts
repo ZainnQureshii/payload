@@ -39,6 +39,7 @@ const isShadowUniquenessError = (error: unknown): error is ValidationError =>
           fieldPath === branchDocIDField ||
           fieldPath === '_branch_doc_id' ||
           fieldPath === '_branchdocid_id' ||
+          fieldPath === 'documentID' ||
           fieldPath === branchField,
       ),
   )
@@ -62,6 +63,9 @@ const isTransientTransactionError = (error: unknown): boolean => {
 const isRecoverableConcurrentShadowError = (error: unknown): boolean =>
   isShadowUniquenessError(error) || isTransientTransactionError(error)
 
+const competingShadowReadDelayMilliseconds = 25
+const maximumCompetingShadowReadAttempts = 20
+
 const findCompetingShadow = async ({
   branch,
   collectionSlug,
@@ -73,18 +77,22 @@ const findCompetingShadow = async ({
   docID: number | string
   req: PayloadRequest
 }): Promise<null | Record<string, unknown>> => {
+  const recoveryReq = isolateObjectProperty(req, ['transactionID'])
+
+  delete recoveryReq.transactionID
+
   // MongoDB does not expose an in-progress transaction's write until it commits.
   // The losing conflict can surface first, so allow the winning transaction a
   // short, bounded period to become visible.
-  for (let attempt = 0; attempt < 5; attempt++) {
+  for (let attempt = 0; attempt < maximumCompetingShadowReadAttempts; attempt++) {
     if (attempt > 0) {
-      await new Promise((resolve) => setTimeout(resolve, 20))
+      await new Promise((resolve) => setTimeout(resolve, competingShadowReadDelayMilliseconds))
     }
 
     const winner = (await req.payload.db.findOne({
       branch: false,
       collection: collectionSlug,
-      req,
+      req: recoveryReq,
       where: {
         and: [{ [branchField]: { equals: branch } }, { [branchDocIDField]: { equals: docID } }],
       },

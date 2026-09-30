@@ -184,6 +184,11 @@ export const getBranchChangesCollection = (config: Config): CollectionConfig => 
         index: true,
       },
       {
+        name: 'documentID',
+        type: 'text',
+        admin: { hidden: true },
+      },
+      {
         name: 'globalSlug',
         type: 'text',
         index: true,
@@ -227,6 +232,11 @@ export const getBranchChangesCollection = (config: Config): CollectionConfig => 
     },
     indexes: [
       { fields: ['branch', 'collectionSlug'], unique: false },
+      {
+        fields: ['branch', 'collectionSlug', 'documentID'],
+        requireExists: ['collectionSlug', 'documentID'],
+        unique: true,
+      },
       {
         fields: ['branch', 'globalSlug'],
         requireExists: ['globalSlug'],
