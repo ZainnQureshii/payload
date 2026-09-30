@@ -14,6 +14,7 @@ export type DeferredCleanupScope = {
 }
 
 const callbacksByDatabase = new WeakMap<object, Map<TransactionID, TransactionCallback[]>>()
+const rollbackCallbacksByDatabase = new WeakMap<object, Map<TransactionID, TransactionCallback[]>>()
 const deferredCleanupScopeContextKey = '_payloadDeferredCleanupScope'
 
 /**
@@ -121,6 +122,24 @@ export const scheduleAfterTransactionCommit = async ({
   getTransactionCallbacks({ database: req.payload.db, transactionID }).push(callback)
 }
 
+export const scheduleAfterTransactionRollback = async ({
+  callback,
+  req,
+}: {
+  callback: TransactionCallback
+  req: MarkRequired<Partial<PayloadRequest>, 'payload'>
+}): Promise<void> => {
+  const pendingTransactionID = req.transactionID
+  const transactionID =
+    pendingTransactionID instanceof Promise ? await pendingTransactionID : pendingTransactionID
+
+  if (!transactionID) {
+    throw new Error('Rollback callbacks require an active transaction.')
+  }
+
+  getRollbackCallbacks({ database: req.payload.db, transactionID }).push(callback)
+}
+
 export const runTransactionCommitCallbacks = async ({
   req,
   transactionID,
@@ -159,6 +178,45 @@ export const clearTransactionCommitCallbacks = ({
 
   if (callbacksByTransaction?.size === 0) {
     callbacksByDatabase.delete(req.payload.db)
+  }
+}
+
+export const runTransactionRollbackCallbacks = async ({
+  req,
+  transactionID,
+}: {
+  req: MarkRequired<Partial<PayloadRequest>, 'payload'>
+  transactionID: TransactionID
+}): Promise<void> => {
+  const callbacksByTransaction = rollbackCallbacksByDatabase.get(req.payload.db)
+  const callbacks = callbacksByTransaction?.get(transactionID)
+
+  if (!callbacks) {
+    return
+  }
+
+  callbacksByTransaction!.delete(transactionID)
+
+  if (callbacksByTransaction!.size === 0) {
+    rollbackCallbacksByDatabase.delete(req.payload.db)
+  }
+
+  await runCallbacks({ callbacks })
+}
+
+export const clearTransactionRollbackCallbacks = ({
+  req,
+  transactionID,
+}: {
+  req: MarkRequired<Partial<PayloadRequest>, 'payload'>
+  transactionID: TransactionID
+}): void => {
+  const callbacksByTransaction = rollbackCallbacksByDatabase.get(req.payload.db)
+
+  callbacksByTransaction?.delete(transactionID)
+
+  if (callbacksByTransaction?.size === 0) {
+    rollbackCallbacksByDatabase.delete(req.payload.db)
   }
 }
 
@@ -231,6 +289,22 @@ const getTransactionCallbacks = ({
 
   callbacksByTransaction.set(transactionID, callbacks)
   callbacksByDatabase.set(database, callbacksByTransaction)
+
+  return callbacks
+}
+
+const getRollbackCallbacks = ({
+  database,
+  transactionID,
+}: {
+  database: object
+  transactionID: TransactionID
+}): TransactionCallback[] => {
+  const callbacksByTransaction = rollbackCallbacksByDatabase.get(database) ?? new Map()
+  const callbacks = callbacksByTransaction.get(transactionID) ?? []
+
+  callbacksByTransaction.set(transactionID, callbacks)
+  rollbackCallbacksByDatabase.set(database, callbacksByTransaction)
 
   return callbacks
 }
