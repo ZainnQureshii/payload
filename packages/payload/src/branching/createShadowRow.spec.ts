@@ -239,6 +239,45 @@ test('should restart an ambient transaction after recovering a competing shadow'
   expect(req.transactionID).toBe('replacement-transaction')
 })
 
+test('should not replace a caller-owned transaction after a competing shadow', async () => {
+  const createError = new ValidationError({
+    collection: collectionSlug,
+    errors: [{ message: 'Value must be unique', path: '_branchDocID' }],
+  })
+  const beginTransaction = vi.fn()
+  const findOne = vi.fn()
+  const rollbackTransaction = vi.fn()
+  const req = {
+    payload: {
+      db: {
+        beginTransaction,
+        create: vi.fn().mockRejectedValue(createError),
+        findOne,
+        rollbackTransaction,
+      },
+    },
+    transactionID: 'caller-transaction',
+  } as unknown as PayloadRequest
+
+  await expect(
+    createShadowRow({
+      branch,
+      collectionSlug,
+      data,
+      docID,
+      onCreated: vi.fn(),
+      ownsAmbientTransaction: false,
+      req,
+      useAmbientTransaction: true,
+    }),
+  ).rejects.toBe(createError)
+
+  expect(rollbackTransaction).not.toHaveBeenCalled()
+  expect(findOne).not.toHaveBeenCalled()
+  expect(beginTransaction).not.toHaveBeenCalled()
+  expect(req.transactionID).toBe('caller-transaction')
+})
+
 test('should restart an ambient transaction after a competing change record wins', async () => {
   const changeError = new ValidationError({
     collection: 'payload-branch-changes',

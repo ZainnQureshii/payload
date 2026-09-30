@@ -255,20 +255,15 @@ const updateByIDOperationWithLifecycle = async <
     if (isBranchingDocument) {
       const isExistingBranchDocument = docWithLocales[branchField] === branch
 
-      if (hasCallerTransaction && !isExistingBranchDocument) {
-        throw new APIError(
-          'Cannot update an untouched branch document within an existing transaction.',
-          httpStatus.CONFLICT,
-        )
-      }
-
       await forkDocument({
         id,
         collectionSlug: collectionConfig.slug,
+        ownsAmbientTransaction: shouldCommit,
         req,
-        // Without an operation-owned transaction, retain the isolated race-recovery path. An
-        // adapter with transactions disabled or unavailable cannot roll back a later hook failure.
-        useAmbientTransaction: shouldCommit,
+        // A caller-owned transaction keeps the first copy and change record atomic with the
+        // update, but only an operation-owned transaction may be replaced during race recovery.
+        // Without any transaction, retain the isolated recovery path.
+        useAmbientTransaction: shouldCommit || hasCallerTransaction,
       })
       didResolveBranchFork = true
 

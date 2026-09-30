@@ -760,8 +760,13 @@ test.suite('Branch deletion safety', { config: './deletion-safety.config.ts' }, 
   })
 
   test.options(
-    'should reject an untouched branch update inside a caller transaction without side effects',
-    { db: 'mongo' },
+    'should commit a first branch update with its caller transaction',
+    {
+      db: (databaseAdapter) =>
+        databaseAdapter === 'mongodb' ||
+        databaseAdapter === 'mongodb-atlas' ||
+        databaseAdapter === 'postgres',
+    },
     async ({ payload }) => {
       const mainTarget = await payload.create({
         collection: deletionSafetyTargetsSlug,
@@ -776,22 +781,32 @@ test.suite('Branch deletion safety', { config: './deletion-safety.config.ts' }, 
       expect(didStartTransaction).toBe(true)
 
       try {
-        await expect(
-          payload.update({
-            id: mainTarget.id,
-            branch: branch.slug,
-            collection: deletionSafetyTargetsSlug,
-            data: { title: 'rejected caller transaction update' },
-            overrideAccess: true,
-            req,
-          }),
-        ).rejects.toMatchObject({
-          message: 'Cannot update an untouched branch document within an existing transaction.',
-          status: 409,
+        const result = await payload.update({
+          id: mainTarget.id,
+          branch: branch.slug,
+          collection: deletionSafetyTargetsSlug,
+          data: { title: 'committed caller transaction update' },
+          overrideAccess: true,
+          req,
         })
 
+        expect(result.title).toBe('committed caller transaction update')
         expect(req.transactionID).toBe(callerTransactionID)
 
+        await commitTransaction(req)
+
+        const mainAfterUpdate = await payload.findByID({
+          id: mainTarget.id,
+          branch: false,
+          collection: deletionSafetyTargetsSlug,
+          overrideAccess: true,
+        })
+        const branchAfterUpdate = await payload.findByID({
+          id: mainTarget.id,
+          branch: branch.slug,
+          collection: deletionSafetyTargetsSlug,
+          overrideAccess: true,
+        })
         const shadowRows = await payload.find({
           branch: false,
           collection: deletionSafetyTargetsSlug,
@@ -812,6 +827,81 @@ test.suite('Branch deletion safety', { config: './deletion-safety.config.ts' }, 
           where: { branch: { equals: branch.slug } },
         })
 
+        expect(mainAfterUpdate.title).toBe('caller transaction main target')
+        expect(branchAfterUpdate.title).toBe('committed caller transaction update')
+        expect(shadowRows.docs).toHaveLength(1)
+        expect(changes.docs).toHaveLength(1)
+      } finally {
+        if (req.transactionID) {
+          await killTransaction(req)
+        }
+      }
+    },
+  )
+
+  test.options(
+    'should roll back a first branch update with its caller transaction',
+    {
+      db: (databaseAdapter) =>
+        databaseAdapter === 'mongodb' ||
+        databaseAdapter === 'mongodb-atlas' ||
+        databaseAdapter === 'postgres',
+    },
+    async ({ payload }) => {
+      const mainTarget = await payload.create({
+        collection: deletionSafetyTargetsSlug,
+        data: { title: 'rolled back caller transaction main target' },
+        overrideAccess: true,
+      })
+      const branch = await createBranch({ name: 'Caller transaction rollback', payload })
+      const req = await createPayloadRequest({ branch: branch.slug, payload })
+      const didStartTransaction = await initTransaction(req)
+      const callerTransactionID = await req.transactionID
+
+      expect(didStartTransaction).toBe(true)
+
+      try {
+        const result = await payload.update({
+          id: mainTarget.id,
+          branch: branch.slug,
+          collection: deletionSafetyTargetsSlug,
+          data: { title: 'rolled back caller transaction update' },
+          overrideAccess: true,
+          req,
+        })
+
+        expect(result.title).toBe('rolled back caller transaction update')
+        expect(req.transactionID).toBe(callerTransactionID)
+
+        await killTransaction(req)
+
+        const branchAfterRollback = await payload.findByID({
+          id: mainTarget.id,
+          branch: branch.slug,
+          collection: deletionSafetyTargetsSlug,
+          overrideAccess: true,
+        })
+        const shadowRows = await payload.find({
+          branch: false,
+          collection: deletionSafetyTargetsSlug,
+          overrideAccess: true,
+          pagination: false,
+          showHiddenFields: true,
+          where: {
+            and: [
+              { _branch: { equals: branch.slug } },
+              { _branchDocID: { equals: mainTarget.id } },
+            ],
+          },
+        })
+        const changes = await payload.find({
+          collection: branchChangesSlug,
+          overrideAccess: true,
+          pagination: false,
+          where: { branch: { equals: branch.slug } },
+        })
+
+        expect(branchAfterRollback.title).toBe('rolled back caller transaction main target')
         expect(shadowRows.docs).toHaveLength(0)
         expect(changes.docs).toHaveLength(0)
       } finally {
@@ -886,8 +976,13 @@ test.suite('Branch deletion safety', { config: './deletion-safety.config.ts' }, 
   )
 
   test.options(
-    'should reject only untouched branch documents during a caller-owned bulk update',
-    { db: 'mongo' },
+    'should update existing and untouched branch documents in a caller-owned bulk update',
+    {
+      db: (databaseAdapter) =>
+        databaseAdapter === 'mongodb' ||
+        databaseAdapter === 'mongodb-atlas' ||
+        databaseAdapter === 'postgres',
+    },
     async ({ payload }) => {
       const branch = await createBranch({ name: 'Caller transaction bulk update', payload })
       const existingShadowTarget = await payload.create({
@@ -926,12 +1021,8 @@ test.suite('Branch deletion safety', { config: './deletion-safety.config.ts' }, 
           where: { id: { in: [existingShadowTarget.id, untouchedTarget.id] } },
         })
 
-        expect(result.docs).toHaveLength(1)
-        expect(result.errors).toHaveLength(1)
-        expect(String(result.errors[0]?.id)).toBe(String(untouchedTarget.id))
-        expect(result.errors[0]?.message).toBe(
-          'Cannot update an untouched branch document within an existing transaction.',
-        )
+        expect(result.docs).toHaveLength(2)
+        expect(result.errors).toHaveLength(0)
         expect(req.transactionID).toBe(callerTransactionID)
 
         await commitTransaction(req)
@@ -981,9 +1072,9 @@ test.suite('Branch deletion safety', { config: './deletion-safety.config.ts' }, 
 
         expect(mainExistingShadowTarget.title).toBe('a existing shadow main target')
         expect(branchExistingShadowTarget.title).toBe('caller transaction bulk replacement')
-        expect(branchUntouchedTarget.title).toBe('b untouched main target')
-        expect(untouchedShadows.docs).toHaveLength(0)
-        expect(untouchedChanges.docs).toHaveLength(0)
+        expect(branchUntouchedTarget.title).toBe('caller transaction bulk replacement')
+        expect(untouchedShadows.docs).toHaveLength(1)
+        expect(untouchedChanges.docs).toHaveLength(1)
       } finally {
         if (req.transactionID) {
           await killTransaction(req)

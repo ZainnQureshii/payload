@@ -516,9 +516,12 @@ test.suite('Branching write-path security', { config: './config.ts' }, () => {
   )
 
   test.options(
-    'should reject an untouched branch restore inside a caller transaction without side effects',
+    'should commit a first branch restore with its caller transaction',
     {
-      db: (databaseAdapter) => databaseAdapter === 'mongodb' || databaseAdapter === 'mongodb-atlas',
+      db: (databaseAdapter) =>
+        databaseAdapter === 'mongodb' ||
+        databaseAdapter === 'mongodb-atlas' ||
+        databaseAdapter === 'postgres',
     },
     async ({ payload }) => {
       const mainDocument = await payload.create({
@@ -555,27 +558,42 @@ test.suite('Branching write-path security', { config: './config.ts' }, () => {
 
       const earlierDocument = await payload.create({
         collection: postsSlug,
-        data: { title: 'created before rejected branch restore' },
+        data: { title: 'created before committed branch restore' },
         overrideAccess: true,
         req,
       })
 
       try {
-        await expect(
-          payload.restoreVersion({
-            id: historicalVersion!.id,
-            branch: branch.slug,
-            collection: pagesSlug,
-            overrideAccess: true,
-            req,
-          }),
-        ).rejects.toMatchObject({
-          message: 'Cannot restore an untouched branch document within an existing transaction.',
-          status: 409,
+        const result = await payload.restoreVersion({
+          id: historicalVersion!.id,
+          branch: branch.slug,
+          collection: pagesSlug,
+          overrideAccess: true,
+          req,
         })
 
+        expect(result.title).toBe('historical main title')
         expect(req.transactionID).toBe(callerTransactionID)
 
+        await commitTransaction(req)
+
+        const persistedDocument = await payload.findByID({
+          id: earlierDocument.id,
+          collection: postsSlug,
+          overrideAccess: true,
+        })
+        const mainAfterRestore = await payload.findByID({
+          id: mainDocument.id,
+          branch: false,
+          collection: pagesSlug,
+          overrideAccess: true,
+        })
+        const branchAfterRestore = await payload.findByID({
+          id: mainDocument.id,
+          branch: branch.slug,
+          collection: pagesSlug,
+          overrideAccess: true,
+        })
         const shadowRows = await payload.find({
           branch: false,
           collection: pagesSlug,
@@ -596,39 +614,11 @@ test.suite('Branching write-path security', { config: './config.ts' }, () => {
           where: { branch: { equals: branch.slug } },
         })
 
-        expect(shadowRows.docs).toHaveLength(0)
-        expect(changes.docs).toHaveLength(0)
-
-        await commitTransaction(req)
-
-        const persistedDocument = await payload.findByID({
-          id: earlierDocument.id,
-          collection: postsSlug,
-          overrideAccess: true,
-        })
-        const shadowRowsAfterCommit = await payload.find({
-          branch: false,
-          collection: pagesSlug,
-          overrideAccess: true,
-          pagination: false,
-          showHiddenFields: true,
-          where: {
-            and: [
-              { _branch: { equals: branch.slug } },
-              { _branchDocID: { equals: mainDocument.id } },
-            ],
-          },
-        })
-        const changesAfterCommit = await payload.find({
-          collection: branchChangesSlug,
-          overrideAccess: true,
-          pagination: false,
-          where: { branch: { equals: branch.slug } },
-        })
-
-        expect(persistedDocument.title).toBe('created before rejected branch restore')
-        expect(shadowRowsAfterCommit.docs).toHaveLength(0)
-        expect(changesAfterCommit.docs).toHaveLength(0)
+        expect(persistedDocument.title).toBe('created before committed branch restore')
+        expect(mainAfterRestore.title).toBe('current main title')
+        expect(branchAfterRestore.title).toBe('historical main title')
+        expect(shadowRows.docs).toHaveLength(1)
+        expect(changes.docs).toHaveLength(1)
       } finally {
         if (req.transactionID) {
           await killTransaction(req)

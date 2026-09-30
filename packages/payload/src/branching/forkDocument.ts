@@ -18,6 +18,8 @@ import {
 type Args = {
   collectionSlug: string
   id: number | string
+  /** Whether the helper may replace the ambient transaction during race recovery. */
+  ownsAmbientTransaction?: boolean
   req: PayloadRequest
   /** Creates a new shadow in the request's existing transaction. */
   useAmbientTransaction?: boolean
@@ -35,6 +37,7 @@ type Args = {
 export const forkDocument = async ({
   id,
   collectionSlug,
+  ownsAmbientTransaction = true,
   req,
   useAmbientTransaction = false,
 }: Args): Promise<number | string> => {
@@ -116,6 +119,7 @@ export const forkDocument = async ({
         overrideAccess: true,
         req: createReq,
       }),
+    ownsAmbientTransaction,
     req,
     source: { id, branch: MAIN_BRANCH },
     useAmbientTransaction,

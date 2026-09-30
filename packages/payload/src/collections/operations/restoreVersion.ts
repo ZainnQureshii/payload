@@ -103,20 +103,13 @@ export const restoreVersionOperation = async <
 
     if (isBranchingDocument) {
       const hasCallerTransaction = !shouldCommit && Boolean(await req.transactionID)
-      const isUntouchedBranch = restoreTarget.document[branchField] !== branch
-
-      if (hasCallerTransaction && isUntouchedBranch) {
-        throw new APIError(
-          'Cannot restore an untouched branch document within an existing transaction.',
-          httpStatus.CONFLICT,
-        )
-      }
 
       await forkDocument({
         id: parentDocID,
         collectionSlug: collectionConfig.slug,
+        ownsAmbientTransaction: shouldCommit,
         req,
-        useAmbientTransaction: shouldCommit,
+        useAmbientTransaction: shouldCommit || hasCallerTransaction,
       })
     }
 

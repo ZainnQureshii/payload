@@ -19,7 +19,7 @@ import type {
 import { executeAccess } from '../../auth/executeAccess.js'
 import { forkDocument } from '../../branching/forkDocument.js'
 import { resetBranchState, resolveBranch } from '../../branching/resolveBranch.js'
-import { branchField, MAIN_BRANCH } from '../../branching/types.js'
+import { MAIN_BRANCH } from '../../branching/types.js'
 import { combineQueries } from '../../database/combineQueries.js'
 import { validateQueryPaths } from '../../database/queryValidation/validateQueryPaths.js'
 import { validateSortQuery } from '../../database/queryValidation/validateSortQuery.js'
@@ -392,24 +392,15 @@ export const updateOperation = async <
         let docWithLocales = initialDocWithLocales
 
         if (isBranchUpdate) {
-          const isExistingBranchDocument =
-            (docWithLocales as Record<string, unknown>)[branchField] === branch
-
-          if (hasCallerTransaction && !isExistingBranchDocument) {
-            throw new APIError(
-              'Cannot update an untouched branch document within an existing transaction.',
-              httpStatus.CONFLICT,
-            )
-          }
-
           await forkDocument({
             id,
             collectionSlug: collection.config.slug,
+            ownsAmbientTransaction: docShouldCommit,
             req: documentReq,
-            // Without an operation-owned transaction, keep the isolated race-recovery path. An
-            // adapter with transactions disabled or unavailable cannot roll back a later hook
-            // failure after its write has completed.
-            useAmbientTransaction: docShouldCommit,
+            // Caller-owned transactions keep the first copy and change record atomic with the
+            // document update. Only a per-document transaction may be replaced during recovery.
+            // Without any transaction, retain the isolated recovery path.
+            useAmbientTransaction: docShouldCommit || hasCallerTransaction,
           })
 
           const branchDocuments = await runQuery({

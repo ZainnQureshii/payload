@@ -21,6 +21,8 @@ type Args = {
    * caller already created (or is creating) its own.
    */
   onCreated: (req: PayloadRequest, shadow: Record<string, unknown>) => Promise<unknown>
+  /** Whether this helper may roll back and replace the request's existing transaction. */
+  ownsAmbientTransaction?: boolean
   req: PayloadRequest
   /** Copies an exact logical source document instead of creating from data alone. */
   source?: CopyArgs['source']
@@ -119,10 +121,10 @@ const findCompetingShadow = async ({
  * A transaction of its own can be rolled back and moved past without
  * disturbing the write the caller is in the middle of.
  *
- * An operation that owns the request's existing transaction can opt into
- * creating the shadow and registry there instead. If that transaction loses
- * a concurrent first-edit race, this helper rolls it back, reads the winning
- * shadow, and starts a replacement transaction for the remaining operation.
+ * A branch operation can opt into creating the shadow and registry in the
+ * request's existing transaction. When the operation owns that transaction,
+ * a concurrent first-edit loss rolls it back and starts a replacement. A
+ * caller-owned transaction is never committed, rolled back or replaced here.
  */
 export const createShadowRow = async ({
   branch,
@@ -130,6 +132,7 @@ export const createShadowRow = async ({
   data,
   docID,
   onCreated,
+  ownsAmbientTransaction = true,
   req,
   source,
   useAmbientTransaction = false,
@@ -155,7 +158,7 @@ export const createShadowRow = async ({
 
       return shadow
     } catch (error) {
-      if (!isRecoverableConcurrentShadowError(error)) {
+      if (!ownsAmbientTransaction || !isRecoverableConcurrentShadowError(error)) {
         throw error
       }
 
