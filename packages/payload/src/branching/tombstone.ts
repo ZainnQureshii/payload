@@ -1,5 +1,6 @@
 import type { PayloadRequest, Where } from '../types/index.js'
 
+import { APIError } from '../errors/index.js'
 import { isolateObjectProperty } from '../utilities/isolateObjectProperty.js'
 import { assertBranchCreatedDocumentsUnreferenced } from './assertBranchCreatedDocumentsUnreferenced.js'
 import { assertBranchWritable } from './assertBranchWritable.js'
@@ -205,6 +206,13 @@ export const resolveBranchDelete = async ({
   const canonicalID =
     (target[branchDocIDField] as any)?.value ?? target[branchDocIDField] ?? targetID
   const operation = peekBranchOperation({ collectionSlug, docID: canonicalID, req })
+
+  if (isOnThisBranch && !operation) {
+    throw new APIError(
+      `The ${collectionSlug} branch row for document ${String(canonicalID)} has no change record.`,
+      409,
+    )
+  }
 
   // Created on this branch: no main row stands behind it, so a real delete
   // leaves nothing to hide.

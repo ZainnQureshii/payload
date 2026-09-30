@@ -1,12 +1,13 @@
 import type { CopyArgs } from '../database/types.js'
 import type { PayloadRequest } from '../types/index.js'
 
+import { APIError } from '../errors/index.js'
 import { ValidationError } from '../errors/ValidationError.js'
 import { commitTransaction } from '../utilities/commitTransaction.js'
 import { initTransaction } from '../utilities/initTransaction.js'
 import { isolateObjectProperty } from '../utilities/isolateObjectProperty.js'
 import { killTransaction } from '../utilities/killTransaction.js'
-import { branchDocIDField, branchField } from './types.js'
+import { branchChangesCollectionSlug, branchDocIDField, branchField } from './types.js'
 
 type Args = {
   branch: string
@@ -101,6 +102,25 @@ const findCompetingShadow = async ({
     })) as null | Record<string, unknown>
 
     if (winner) {
+      const change = await req.payload.db.findOne({
+        collection: branchChangesCollectionSlug,
+        req: recoveryReq,
+        where: {
+          and: [
+            { branch: { equals: branch } },
+            { collectionSlug: { equals: collectionSlug } },
+            { documentID: { equals: String(docID) } },
+          ],
+        },
+      })
+
+      if (!change) {
+        throw new APIError(
+          `The ${collectionSlug} branch row for document ${String(docID)} has no change record.`,
+          409,
+        )
+      }
+
       return winner
     }
   }

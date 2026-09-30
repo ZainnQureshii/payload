@@ -83,6 +83,41 @@ test('should recover a competing database copy after a uniqueness failure', asyn
   expect(create).not.toHaveBeenCalled()
 })
 
+test('should reject a competing shadow without a change record', async () => {
+  const copyError = new ValidationError({
+    collection: collectionSlug,
+    errors: [{ message: 'Value must be unique', path: '_branchDocID' }],
+  })
+  const findOne = vi
+    .fn()
+    .mockImplementation(({ collection }: { collection: string }) =>
+      Promise.resolve(collection === 'payload-branch-changes' ? null : shadow),
+    )
+  const req = {
+    payload: {
+      db: {
+        copy: vi.fn().mockRejectedValue(copyError),
+        findOne,
+      },
+    },
+  } as unknown as PayloadRequest
+
+  await expect(
+    createShadowRow({
+      branch,
+      collectionSlug,
+      data,
+      docID,
+      onCreated: vi.fn(),
+      req,
+      source: { branch: 'main', id: docID },
+    }),
+  ).rejects.toMatchObject({ status: 409 })
+
+  expect(findOne).toHaveBeenCalledTimes(2)
+  expect(findOne.mock.calls[1]![0]).toMatchObject({ collection: 'payload-branch-changes' })
+})
+
 test('should recover a competing database copy after a transient transaction conflict', async () => {
   const copyError = {
     hasErrorLabel: (label: string) => label === 'TransientTransactionError',
@@ -145,8 +180,9 @@ test('should wait for a competing shadow transaction to become visible', async (
     }),
   ).resolves.toBe(shadow)
 
-  expect(findOne).toHaveBeenCalledTimes(6)
+  expect(findOne).toHaveBeenCalledTimes(7)
   expect((findOne.mock.calls[0]![0] as { req: PayloadRequest }).req.transactionID).toBeUndefined()
+  expect(findOne.mock.calls[6]![0]).toMatchObject({ collection: 'payload-branch-changes' })
   expect(req.transactionID).toBe('caller-transaction')
 })
 
@@ -234,7 +270,8 @@ test('should restart an ambient transaction after recovering a competing shadow'
   ).resolves.toBe(shadow)
 
   expect(rollbackTransaction).toHaveBeenCalledWith('operation-transaction')
-  expect(findOne).toHaveBeenCalledOnce()
+  expect(findOne).toHaveBeenCalledTimes(2)
+  expect(findOne.mock.calls[1]![0]).toMatchObject({ collection: 'payload-branch-changes' })
   expect(beginTransaction).toHaveBeenCalledOnce()
   expect(req.transactionID).toBe('replacement-transaction')
 })
@@ -311,7 +348,8 @@ test('should restart an ambient transaction after a competing change record wins
   ).resolves.toBe(shadow)
 
   expect(rollbackTransaction).toHaveBeenCalledWith('operation-transaction')
-  expect(findOne).toHaveBeenCalledOnce()
+  expect(findOne).toHaveBeenCalledTimes(2)
+  expect(findOne.mock.calls[1]![0]).toMatchObject({ collection: 'payload-branch-changes' })
   expect(beginTransaction).toHaveBeenCalledOnce()
   expect(req.transactionID).toBe('replacement-transaction')
 })
