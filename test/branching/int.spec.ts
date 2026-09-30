@@ -82,7 +82,7 @@ test.suite('Branching', { config: './config.ts', resetBetweenTests: false }, () 
 
       expect(names).toContain('_branch')
       expect(names).toContain('_branchDocID')
-      expect(names).toContain('_branchOp')
+      expect(names).not.toContain('_branchOp')
     })
 
     test('should enforce one collection change per branch and logical document', () => {
@@ -2598,8 +2598,8 @@ test.suite('Branching', { config: './config.ts', resetBetweenTests: false }, () 
         data: { title: 'edited on branch' },
       })
 
-      // `_branchOp` and `_branchDocID` are `hidden`, so they are stripped from API
-      // responses — inspecting them is exactly what `showHiddenFields` is for.
+      // `_branchDocID` is `hidden`, so it is stripped from API responses.
+      // Inspecting it is exactly what `showHiddenFields` is for.
       const shadows = await payload.find({
         branch: false,
         collection: postsSlug,
@@ -2609,7 +2609,8 @@ test.suite('Branching', { config: './config.ts', resetBetweenTests: false }, () 
       })
 
       expect(shadows.docs).toHaveLength(1)
-      expect(shadows.docs[0]).toMatchObject({ _branchOp: 'update', title: 'edited on branch' })
+      expect(shadows.docs[0]).not.toHaveProperty('_branchOp')
+      expect(shadows.docs[0]).toMatchObject({ title: 'edited on branch' })
       expect(String(shadows.docs[0]!._branchDocID)).toBe(String(mainDocID))
     })
 
@@ -2930,7 +2931,7 @@ test.suite('Branching', { config: './config.ts', resetBetweenTests: false }, () 
       expect(onMain.docs.map((doc) => String(doc.id))).toContain(String(mainDocID))
     })
 
-    test('should use the delete change rather than row metadata to hide a tombstone', async () => {
+    test('should store deletion state only in the delete change', async () => {
       await payload.delete({ id: mainDocID, branch: 'cow', collection: postsSlug })
 
       const rawReq = await createPayloadRequest({ branch: false, payload })
@@ -2943,14 +2944,6 @@ test.suite('Branching', { config: './config.ts', resetBetweenTests: false }, () 
         },
       })
 
-      await payload.db.updateOne({
-        branch: false,
-        collection: postsSlug,
-        data: { _branchOp: null },
-        req: rawReq,
-        where: { id: { equals: tombstone!.id } },
-      })
-
       const onBranch = await payload.findByID({
         id: mainDocID,
         branch: 'cow',
@@ -2959,6 +2952,7 @@ test.suite('Branching', { config: './config.ts', resetBetweenTests: false }, () 
       })
       const onMain = await payload.findByID({ id: mainDocID, collection: postsSlug })
 
+      expect(tombstone).not.toHaveProperty('_branchOp')
       expect(onBranch).toBeNull()
       expect(onMain.title).toBe('original on main')
     })
@@ -3003,14 +2997,6 @@ test.suite('Branching', { config: './config.ts', resetBetweenTests: false }, () 
       })
       const rawReq = await createPayloadRequest({ branch: false, payload })
 
-      await payload.db.updateOne({
-        branch: false,
-        collection: postsSlug,
-        data: { _branchOp: 'update' },
-        req: rawReq,
-        where: { id: { equals: created.id } },
-      })
-
       await payload.delete({ id: created.id, branch: 'cow', collection: postsSlug })
 
       const rows = await payload.db.find({
@@ -3040,21 +3026,6 @@ test.suite('Branching', { config: './config.ts', resetBetweenTests: false }, () 
       })
 
       const rawReq = await createPayloadRequest({ branch: false, payload })
-      const shadow = await payload.db.findOne({
-        branch: false,
-        collection: postsSlug,
-        req: rawReq,
-        where: { _branchDocID: { equals: mainDocID } },
-      })
-
-      await payload.db.updateOne({
-        branch: false,
-        collection: postsSlug,
-        data: { _branchOp: 'create' },
-        req: rawReq,
-        where: { id: { equals: shadow!.id } },
-      })
-
       await payload.delete({ id: mainDocID, branch: 'cow', collection: postsSlug })
 
       const onBranch = await payload.findByID({
@@ -7420,7 +7391,7 @@ test.suite('Branching', { config: './config.ts', resetBetweenTests: false }, () 
       })
 
       expect(shadows.docs).toHaveLength(1)
-      expect(shadows.docs[0]!._branchOp).toBe('delete')
+      expect(shadows.docs[0]).not.toHaveProperty('_branchOp')
 
       const changes = await payload.find({
         collection: branchChangesSlug,
@@ -7429,6 +7400,7 @@ test.suite('Branching', { config: './config.ts', resetBetweenTests: false }, () 
       })
 
       expect(changes.docs).toHaveLength(1)
+      expect(changes.docs[0]).toMatchObject({ operation: 'delete' })
     })
   })
 

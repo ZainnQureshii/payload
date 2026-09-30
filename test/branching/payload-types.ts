@@ -65,7 +65,9 @@ export interface Config {
   auth: {
     users: UserAuthOperations;
   };
-  blocks: {};
+  blocks: {
+    'localized-category-block': LocalizedCategoryBlock;
+  };
   collections: {
     posts: Post;
     pages: Page;
@@ -177,29 +179,13 @@ export interface UserAuthOperations {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "posts".
+ * via the `definition` "LocalizedCategoryBlock".
  */
-export interface Post {
-  id: string;
-  title?: string | null;
-  order?: number | null;
-  confidential?: string | null;
-  computedDefault?: string | null;
-  internalNote?: string | null;
+export interface LocalizedCategoryBlock {
   category?: (string | null) | Category;
-  _branch: string;
-  _branchDocID?: (string | null) | Post;
-  _branchOp?: string | null;
-  createdBy?: {
-    relationTo: 'users';
-    value: string | User;
-  } | null;
-  updatedBy?: {
-    relationTo: 'users';
-    value: string | User;
-  } | null;
-  updatedAt: string;
-  createdAt: string;
+  id?: string | null;
+  blockName?: string | null;
+  blockType: 'localized-category-block';
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -234,7 +220,6 @@ export interface Category {
   };
   _branch: string;
   _branchDocID?: (string | null) | Category;
-  _branchOp?: string | null;
   createdBy?: {
     relationTo: 'users';
     value: string | User;
@@ -256,7 +241,6 @@ export interface Page {
   category?: (string | null) | Category;
   _branch: string;
   _branchDocID?: (string | null) | Page;
-  _branchOp?: string | null;
   createdBy?: {
     relationTo: 'users';
     value: string | User;
@@ -305,6 +289,33 @@ export interface User {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "posts".
+ */
+export interface Post {
+  id: string;
+  title?: string | null;
+  order?: number | null;
+  confidential?: string | null;
+  computedDefault?: string | null;
+  internalNote?: string | null;
+  category?: (string | null) | Category;
+  localizedCategory?: (string | null) | Category;
+  sharedLayout?: LocalizedCategoryBlock[] | null;
+  _branch: string;
+  _branchDocID?: (string | null) | Post;
+  createdBy?: {
+    relationTo: 'users';
+    value: string | User;
+  } | null;
+  updatedBy?: {
+    relationTo: 'users';
+    value: string | User;
+  } | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "media".
  */
 export interface Media {
@@ -312,7 +323,6 @@ export interface Media {
   alt?: string | null;
   _branch: string;
   _branchDocID?: (string | null) | Media;
-  _branchOp?: string | null;
   createdBy?: {
     relationTo: 'users';
     value: string | User;
@@ -342,7 +352,6 @@ export interface UniqueDoc {
   slug?: string | null;
   _branch: string;
   _branchDocID?: (string | null) | UniqueDoc;
-  _branchOp?: string | null;
   createdBy?: {
     relationTo: 'users';
     value: string | User;
@@ -363,7 +372,6 @@ export interface NumericIdDoc {
   title?: string | null;
   _branch: string;
   _branchDocID?: (number | null) | NumericIdDoc;
-  _branchOp?: string | null;
   createdBy?: {
     relationTo: 'users';
     value: string | User;
@@ -384,7 +392,6 @@ export interface RestrictedDoc {
   title?: string | null;
   _branch: string;
   _branchDocID?: (string | null) | RestrictedDoc;
-  _branchOp?: string | null;
   createdBy?: {
     relationTo: 'users';
     value: string | User;
@@ -406,7 +413,6 @@ export interface WhereAccessDoc {
   mergeable?: boolean | null;
   _branch: string;
   _branchDocID?: (string | null) | WhereAccessDoc;
-  _branchOp?: string | null;
   createdBy?: {
     relationTo: 'users';
     value: string | User;
@@ -427,7 +433,6 @@ export interface PublicDoc {
   title?: string | null;
   _branch: string;
   _branchDocID?: (string | null) | PublicDoc;
-  _branchOp?: string | null;
   createdBy?: {
     relationTo: 'users';
     value: string | User;
@@ -449,7 +454,6 @@ export interface MaxVersionsDoc {
   title?: string | null;
   _branch: string;
   _branchDocID?: (string | null) | MaxVersionsDoc;
-  _branchOp?: string | null;
   createdBy?: {
     relationTo: 'users';
     value: string | User;
@@ -471,7 +475,6 @@ export interface AutosaveDoc {
   title?: string | null;
   _branch: string;
   _branchDocID?: (string | null) | AutosaveDoc;
-  _branchOp?: string | null;
   createdBy?: {
     relationTo: 'users';
     value: string | User;
@@ -503,7 +506,6 @@ export interface LocalizedDoc {
   shared?: string | null;
   _branch: string;
   _branchDocID?: (string | null) | LocalizedDoc;
-  _branchOp?: string | null;
   createdBy?: {
     relationTo: 'users';
     value: string | User;
@@ -533,7 +535,6 @@ export interface NestedDoc {
   layout?: Hero[] | null;
   _branch: string;
   _branchDocID?: (string | null) | NestedDoc;
-  _branchOp?: string | null;
   createdBy?: {
     relationTo: 'users';
     value: string | User;
@@ -971,9 +972,10 @@ export interface PostsSelect<T extends boolean = true> {
   computedDefault?: T;
   internalNote?: T;
   category?: T;
+  localizedCategory?: T;
+  sharedLayout?: T | {};
   _branch?: T;
   _branchDocID?: T;
-  _branchOp?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -988,7 +990,6 @@ export interface PagesSelect<T extends boolean = true> {
   category?: T;
   _branch?: T;
   _branchDocID?: T;
-  _branchOp?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -1006,7 +1007,6 @@ export interface CategoriesSelect<T extends boolean = true> {
   content?: T;
   _branch?: T;
   _branchDocID?: T;
-  _branchOp?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -1020,7 +1020,6 @@ export interface MediaSelect<T extends boolean = true> {
   alt?: T;
   _branch?: T;
   _branchDocID?: T;
-  _branchOp?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -1043,7 +1042,6 @@ export interface UniqueDocsSelect<T extends boolean = true> {
   slug?: T;
   _branch?: T;
   _branchDocID?: T;
-  _branchOp?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -1058,7 +1056,6 @@ export interface NumericIdDocsSelect<T extends boolean = true> {
   title?: T;
   _branch?: T;
   _branchDocID?: T;
-  _branchOp?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -1072,7 +1069,6 @@ export interface RestrictedDocsSelect<T extends boolean = true> {
   title?: T;
   _branch?: T;
   _branchDocID?: T;
-  _branchOp?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -1087,7 +1083,6 @@ export interface WhereAccessDocsSelect<T extends boolean = true> {
   mergeable?: T;
   _branch?: T;
   _branchDocID?: T;
-  _branchOp?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -1101,7 +1096,6 @@ export interface PublicDocsSelect<T extends boolean = true> {
   title?: T;
   _branch?: T;
   _branchDocID?: T;
-  _branchOp?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -1116,7 +1110,6 @@ export interface MaxVersionsDocsSelect<T extends boolean = true> {
   title?: T;
   _branch?: T;
   _branchDocID?: T;
-  _branchOp?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -1131,7 +1124,6 @@ export interface AutosaveDocsSelect<T extends boolean = true> {
   title?: T;
   _branch?: T;
   _branchDocID?: T;
-  _branchOp?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -1156,7 +1148,6 @@ export interface LocalizedDocsSelect<T extends boolean = true> {
   shared?: T;
   _branch?: T;
   _branchDocID?: T;
-  _branchOp?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -1189,7 +1180,6 @@ export interface NestedDocsSelect<T extends boolean = true> {
       };
   _branch?: T;
   _branchDocID?: T;
-  _branchOp?: T;
   createdBy?: T;
   updatedBy?: T;
   updatedAt?: T;
@@ -1380,6 +1370,13 @@ export interface PayloadMigrationsSelect<T extends boolean = true> {
 export interface Header {
   id: string;
   navLabel?: string | null;
+  secondaryLabel?: string | null;
+  navItems?:
+    | {
+        label?: string | null;
+        id?: string | null;
+      }[]
+    | null;
   _branch: string;
   createdBy?: {
     relationTo: 'users';
@@ -1456,6 +1453,13 @@ export interface PayloadJobsStat {
  */
 export interface HeaderSelect<T extends boolean = true> {
   navLabel?: T;
+  secondaryLabel?: T;
+  navItems?:
+    | T
+    | {
+        label?: T;
+        id?: T;
+      };
   _branch?: T;
   createdBy?: T;
   updatedBy?: T;

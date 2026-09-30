@@ -50,7 +50,6 @@ import {
   branchesCollectionSlug,
   branchField,
   branchMergesCollectionSlug,
-  branchOpField,
   branchParentField,
   MAIN_BRANCH,
 } from './types.js'
@@ -722,7 +721,6 @@ const stripInternal = (data: Record<string, unknown>): Record<string, unknown> =
     id: _id,
     [branchDocIDField]: _docID,
     [branchField]: _branch,
-    [branchOpField]: _op,
     createdAt: _createdAt,
     updatedAt: _updatedAt,
     ...rest
@@ -1171,7 +1169,7 @@ const applyChange = async ({
         id: shadowID,
         branch: false,
         collection: collectionSlug,
-        data: { [branchField]: MAIN_BRANCH, [branchOpField]: null },
+        data: { [branchField]: MAIN_BRANCH },
         req: createReq,
       })
 
@@ -1373,7 +1371,7 @@ const applyBranchCreateWithoutTransaction = async ({
       id: shadowID,
       branch: false,
       collection: collectionSlug,
-      data: { [branchField]: MAIN_BRANCH, [branchOpField]: null },
+      data: { [branchField]: MAIN_BRANCH },
       req,
     })
 
@@ -1511,7 +1509,6 @@ const promotePreparedVersion = async ({
       version: {
         ...documentVersion,
         [branchField]: MAIN_BRANCH,
-        [branchOpField]: null,
       },
     } as never,
   })
@@ -1563,7 +1560,6 @@ const restoreBranchCreatedShadow = async ({
     data: {
       ...originalData,
       [branchField]: branch,
-      [branchOpField]: 'create',
     },
     req,
   })
