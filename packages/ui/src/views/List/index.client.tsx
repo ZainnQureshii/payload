@@ -81,7 +81,24 @@ export function DefaultListView(props: ListViewClientProps) {
     getEntityConfig,
   } = useConfig()
 
-  const { data, hasActiveFilters, isGroupingBy, query } = useListQuery()
+  const {
+    data,
+    hasActiveFilters,
+    isGroupingBy,
+    query,
+    resolvedGroupBy,
+    resolvedSearch,
+    searchInput,
+  } = useListQuery()
+
+  const initialSearch = useRef(resolvedSearch || '')
+  const [hasCompletedSearch, setHasCompletedSearch] = useState(false)
+
+  useEffect(() => {
+    if ((resolvedSearch || '') !== initialSearch.current) {
+      setHasCompletedSearch(true)
+    }
+  }, [resolvedSearch])
 
   const hasWhereParam = useRef(Boolean(query?.where))
   const [isWhereOpen, setIsWhereOpen] = useState(hasActiveFilters)
@@ -111,14 +128,48 @@ export function DefaultListView(props: ListViewClientProps) {
   const previousResults = useRef(data)
   const [resultsAnnouncement, setResultsAnnouncement] = useState('')
 
-  useEffect(() => {
-    if (data && previousResults.current !== data) {
-      const label = getTranslation(data.totalDocs === 1 ? labels.singular : labels.plural, i18n)
+  const isSearchSettled =
+    (searchInput || '') === (resolvedSearch || '') &&
+    (query?.search || '') === (resolvedSearch || '') &&
+    (query?.groupBy || '') === (resolvedGroupBy || '')
 
-      setResultsAnnouncement(`${data.totalDocs} ${label}${query.search ? `: ${query.search}` : ''}`)
-      previousResults.current = data
+  useEffect(() => {
+    setResultsAnnouncement('')
+    if (!isSearchSettled || !data || (!hasCompletedSearch && previousResults.current === data)) {
+      return
     }
-  }, [data, i18n, labels.plural, labels.singular, query.search])
+
+    const announcement = hasCompletedSearch
+      ? i18n.t(
+          resolvedSearch
+            ? resolvedGroupBy
+              ? 'general:searchGroups'
+              : 'general:searchResults'
+            : 'general:searchCleared',
+          { count: data.totalDocs, search: resolvedSearch },
+        )
+      : `${data.totalDocs} ${getTranslation(
+          data.totalDocs === 1 ? labels.singular : labels.plural,
+          i18n,
+        )}`
+
+    const timeout = setTimeout(() => {
+      setResultsAnnouncement(announcement)
+      previousResults.current = data
+    }, 500)
+
+    return () => clearTimeout(timeout)
+  }, [
+    data,
+    hasCompletedSearch,
+    i18n,
+    isSearchSettled,
+    labels.plural,
+    labels.singular,
+    resolvedGroupBy,
+    resolvedSearch,
+    searchInput,
+  ])
 
   const collectionLabel = getTranslation(labels?.plural, i18n)
 
@@ -202,9 +253,6 @@ export function DefaultListView(props: ListViewClientProps) {
       }
     >
       <Fragment>
-        <span aria-atomic="true" className="sr-only" role="status">
-          {resultsAnnouncement}
-        </span>
         <TableColumnsProvider collectionSlug={collectionSlug} columnState={columnState}>
           <div className={`${baseClass} ${baseClass}--${collectionSlug}`}>
             <SelectionProvider docs={docs} totalDocs={data?.totalDocs}>
@@ -272,6 +320,15 @@ export function DefaultListView(props: ListViewClientProps) {
                   resolvedFilterOptions={resolvedFilterOptions}
                 />
               )}
+              <div
+                aria-atomic="true"
+                className={`${baseClass}__search-status sr-only`}
+                role="status"
+              >
+                {isSearchSettled && resultsAnnouncement && (
+                  <span key={resolvedSearch || ''}>{resultsAnnouncement}</span>
+                )}
+              </div>
               {BeforeListTable}
               {hierarchyData ? (
                 <DocumentSelectionProvider
