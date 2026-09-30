@@ -21,6 +21,7 @@ import type {
 import { executeAccess } from '../../auth/executeAccess.js'
 import { hasWhereAccessResult } from '../../auth/types.js'
 import { forkDocument } from '../../branching/forkDocument.js'
+import { assertBranchMergeValidationWriteAllowed } from '../../branching/mergeWriteGuard.js'
 import {
   refreshRequestDataLoader,
   resetBranchState,
@@ -125,6 +126,8 @@ const updateByIDOperationWithLifecycle = async <
   let cleanupScope: DeferredCleanupScope | null = null
   let didResolveBranchFork = false
   let shouldCommit = false
+
+  assertBranchMergeValidationWriteAllowed({ req: args.req })
 
   try {
     const hasCallerTransaction = Boolean(await args.req.transactionID)

@@ -10,6 +10,7 @@ import type { Collection, DataFromCollectionSlug } from '../config/types.js'
 
 import { executeAccess } from '../../auth/executeAccess.js'
 import { hasWhereAccessResult } from '../../auth/types.js'
+import { assertBranchMergeValidationWriteAllowed } from '../../branching/mergeWriteGuard.js'
 import { refreshBranchState, resolveBranch } from '../../branching/resolveBranch.js'
 import {
   assertBranchCreatedDeleteUnreferenced,
@@ -58,6 +59,8 @@ export const deleteByIDOperation = async <TSlug extends CollectionSlug, TSelect 
   let args = incomingArgs
   let cleanupScope: DeferredCleanupScope | null = null
   let shouldCommit = false
+
+  assertBranchMergeValidationWriteAllowed({ req: args.req })
 
   try {
     shouldCommit = !args.disableTransaction && (await initTransaction(args.req))

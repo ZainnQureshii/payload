@@ -18,6 +18,7 @@ import type {
 
 import { executeAccess } from '../../auth/executeAccess.js'
 import { forkDocument } from '../../branching/forkDocument.js'
+import { assertBranchMergeValidationWriteAllowed } from '../../branching/mergeWriteGuard.js'
 import {
   refreshRequestDataLoader,
   resetBranchState,
@@ -105,6 +106,8 @@ export const updateOperation = async <
   let cleanupScope: DeferredCleanupScope | null = null
   let shouldUsePerDocumentBranchTransactions = false
   let shouldCommit = false
+
+  assertBranchMergeValidationWriteAllowed({ req: args.req })
 
   if (args.collection.config.disableBulkEdit && !args.overrideAccess) {
     throw new APIError(`Collection ${args.collection.config.slug} has disabled bulk edit`, 403)
