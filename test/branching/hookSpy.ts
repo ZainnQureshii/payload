@@ -9,7 +9,7 @@ export const hookSpy: {
   allowRestrictedCreate?: boolean
   allowRestrictedLocalizedCreate?: boolean
   allowRestrictedNestedFieldWrite?: boolean
-  beforeChange?: (args: any) => void
+  beforeChange?: (args: any) => Promise<void> | void
   beforeMerge?: (args: any) => Promise<void> | void
   branchValidation?: BranchMergeValidate
   headerBeforeOperation?: () => void
