@@ -26,6 +26,7 @@ import {
   enforceMaxVersions,
   skipEnforceMaxVersionsContextKey,
 } from '../versions/enforceMaxVersions.js'
+import { coalesceLatestVersionContextKey } from '../versions/updateLatestVersion.js'
 import { discardBranchChanges } from './discard.js'
 import { resolveEffectiveOperations } from './effectiveOperations.js'
 import {
@@ -1208,9 +1209,10 @@ const applyChange = async ({
     return
   }
 
-  const localization = payload.config.localization
-  const localeCodes = localization ? localization.localeCodes : undefined
   const fields = payload.collections[collectionSlug]!.config.fields
+  const localization = payload.config.localization
+  const hasLocalizedFields = traverseForLocalizedFields(fields)
+  const localeCodes = localization && hasLocalizedFields ? localization.localeCodes : undefined
   const mainRowIDsBySource: NestedRowIDMap = new Map()
 
   for (const write of writes) {
@@ -1275,7 +1277,7 @@ const applyChange = async ({
     // locales together — so passing it through resolved a single locale and silently
     // dropped the branch's edits to every other one. Reading per locale through the Local
     // API is the same thing a person editing main by hand would do.
-    for (const locale of localeCodes) {
+    for (const [localeIndex, locale] of localeCodes.entries()) {
       const branchDoc = await readLocalizedBranchWrite({
         branch,
         collectionSlug,
@@ -1310,7 +1312,11 @@ const applyChange = async ({
         draft: write.draft,
         locale,
         overrideAccess,
-        req,
+        req: withLocale({
+          coalesceLatestVersion: localeIndex > 0,
+          locale,
+          req,
+        }),
         trash: includesTrashState(data),
       })) as Record<string, unknown>
 
@@ -1330,10 +1336,22 @@ const applyChange = async ({
 const includesTrashState = (data: Record<string, unknown>): boolean =>
   Object.prototype.hasOwnProperty.call(data, 'deletedAt')
 
-const withLocale = ({ locale, req }: { locale: string; req: PayloadRequest }): PayloadRequest => {
+const withLocale = ({
+  coalesceLatestVersion,
+  locale,
+  req,
+}: {
+  coalesceLatestVersion?: boolean
+  locale: string
+  req: PayloadRequest
+}): PayloadRequest => {
   const isolated = isolateBranchState(req)
 
   isolated.locale = locale
+
+  if (coalesceLatestVersion) {
+    ;(isolated.context as Record<PropertyKey, unknown>)[coalesceLatestVersionContextKey] = true
+  }
 
   return isolated
 }
@@ -1606,7 +1624,7 @@ const restoreBranchCreatedShadow = async ({
   })
 }
 
-/** Applies every stored state of a branch global to main in published-then-draft order. */
+/** Applies the latest stored state of a branch global to main. */
 const applyGlobalChange = async ({
   branch,
   globalSlug,
@@ -1629,7 +1647,7 @@ const applyGlobalChange = async ({
   const locales = getGlobalMergeLocales({ globalSlug, payload, req })
 
   for (const write of writes) {
-    for (const locale of locales) {
+    for (const [localeIndex, locale] of locales.entries()) {
       const data = await readBranchGlobalWrite({
         branch,
         draft: write.draft,
@@ -1652,7 +1670,11 @@ const applyGlobalChange = async ({
         draft: write.draft,
         locale,
         overrideAccess,
-        req: withLocale({ locale, req }),
+        req: withLocale({
+          coalesceLatestVersion: localeIndex > 0,
+          locale,
+          req,
+        }),
       })
     }
   }

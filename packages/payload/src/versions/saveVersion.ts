@@ -8,7 +8,7 @@ import { getVersionsMax, hasLocalizeStatusEnabled } from '../utilities/getVersio
 import { sanitizeInternalFields } from '../utilities/sanitizeInternalFields.js'
 import { getQueryDraftsSelect } from './drafts/getQueryDraftsSelect.js'
 import { enforceMaxVersions } from './enforceMaxVersions.js'
-import { updateLatestVersion } from './updateLatestVersion.js'
+import { coalesceLatestVersionContextKey, updateLatestVersion } from './updateLatestVersion.js'
 
 type Args<T extends JsonObject = JsonObject> = {
   autosave?: boolean
@@ -55,6 +55,10 @@ export async function saveVersion<TData extends JsonObject = JsonObject>({
     _status?: 'draft'
     updatedAt?: string
   } & TData = deepCopyObjectSimple(docWithLocales)
+  const shouldCoalesceLatestVersion =
+    (req?.context as Record<PropertyKey, unknown> | undefined)?.[
+      coalesceLatestVersionContextKey
+    ] === true
 
   if ((collection?.timestamps || global) && draft) {
     versionData.updatedAt = now
@@ -80,7 +84,7 @@ export async function saveVersion<TData extends JsonObject = JsonObject>({
   }
 
   try {
-    if (unpublish || autosave) {
+    if (unpublish || autosave || shouldCoalesceLatestVersion) {
       result = await updateLatestVersion({
         id,
         collection,
@@ -88,7 +92,11 @@ export async function saveVersion<TData extends JsonObject = JsonObject>({
         now,
         payload,
         req,
-        shouldUpdate: autosave ? (v) => 'autosave' in v && v.autosave === true : undefined,
+        shouldUpdate: shouldCoalesceLatestVersion
+          ? undefined
+          : autosave
+            ? (v) => 'autosave' in v && v.autosave === true
+            : undefined,
         versionData,
       })
     }
