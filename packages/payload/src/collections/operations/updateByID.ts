@@ -63,6 +63,8 @@ import { updateDocument } from './utilities/update.js'
 
 export type Arguments<TSlug extends CollectionSlug> = {
   autosave?: boolean
+  /** @internal Storage request for an in-place branch-created row promotion. */
+  branchMergeStorageReq?: PayloadRequest
   collection: Collection
   data: DeepPartial<RequiredDataFromCollectionSlug<TSlug>>
   depth?: number
@@ -184,6 +186,7 @@ const updateByIDOperationWithLifecycle = async <
     const {
       id,
       autosave = false,
+      branchMergeStorageReq,
       collection: { config: collectionConfig },
       collection,
       depth,
@@ -248,6 +251,7 @@ const updateByIDOperationWithLifecycle = async <
       locale: locale!,
       overrideAccess: overrideAccess!,
       req,
+      storageReq: branchMergeStorageReq,
       trash,
     })
     let { docWithLocales } = authorizedDocument
@@ -336,6 +340,7 @@ const updateByIDOperationWithLifecycle = async <
       collectionConfig,
       config,
       data: deepCopyObjectSimple(newFileData),
+      databaseReq: branchMergeStorageReq,
       depth: depth!,
       docWithLocales,
       draftArg,
@@ -428,6 +433,7 @@ const readAuthorizedUpdateDocument = async <TSlug extends CollectionSlug>({
   locale,
   overrideAccess,
   req,
+  storageReq,
   trash,
 }: {
   collectionConfig: Collection['config']
@@ -437,6 +443,7 @@ const readAuthorizedUpdateDocument = async <TSlug extends CollectionSlug>({
   locale: string
   overrideAccess: boolean
   req: PayloadRequest
+  storageReq?: PayloadRequest
   trash: boolean
 }): Promise<{
   docWithLocales: RequiredDataFromCollectionSlug<TSlug> & TypeWithID
@@ -488,7 +495,7 @@ const readAuthorizedUpdateDocument = async <TSlug extends CollectionSlug>({
     collectionConfig,
     hasWherePolicy,
     locale,
-    req,
+    req: storageReq ?? req,
     where: fullWhere,
   })
 
